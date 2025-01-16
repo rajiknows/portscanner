@@ -47,7 +47,8 @@ cargo build --release
 
 # Move the binary to the desired location
 echo "Installing $BINARY_NAME to $INSTALL_PATH..."
-sudo cp target/release/$PROJECT_NAME $INSTALL_PATH/$BINARY_NAME
+sudo cp target/release/$BINARY_NAME $INSTALL_PATH/$BINARY_NAME
+
 
 # Confirm the installation
 if command_exists $BINARY_NAME; then
