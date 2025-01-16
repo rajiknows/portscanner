@@ -1,5 +1,5 @@
 [package]
-name = "ps" 
+name = "sk" 
 version = "1.0.0"
 authors = ["RAJ"]
 description = "A simple and fast port scanning tool for local IPs or CIDR ranges."
