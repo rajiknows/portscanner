@@ -2,7 +2,7 @@
 
 set -e
 
-BINARY_NAME="ps" # Replace with your desired binary name
+BINARY_NAME="sk" # Replace with your desired binary name
 INSTALL_PATH="/usr/local/bin"
 PROJECT_NAME="portscanner"
 REPO_URL="https://github.com/rajiknows/$PROJECT_NAME.git"
