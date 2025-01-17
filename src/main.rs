@@ -1,94 +1,102 @@
-use std::str::FromStr;
-use std::{env, error::Error, net::TcpListener};
-
-use ipnetwork::IpNetwork;
+use std::process::Command;
+use std::{env, error::Error};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 5 {
+    if args.len() < 3 {
         println!(
-            "Usage: {} -ip <address> -p <starting_port> <ending_port> [-cidr <CIDR>]",
-            args[0]
+            "Usage:\n\
+            {} -p <port>             (Check if a port is available)\n\
+            {} -p <start> <end>      (Check if a range of ports is available)\n\
+            {} -n <port>             (Check if a port is available, free it if not)\n\
+            {} -n <start> <end>      (Check if a range of ports is available, free them if not)",
+            args[0], args[0], args[0], args[0]
         );
         return Ok(());
     }
 
-    let mut addr = String::new();
-    let mut starting_port: usize = 0;
-    let mut ending_port: usize = 0;
-    let mut cidr: Option<String> = None; // Optional CIDR
+    let command = args[1].as_str();
+    let start_port: usize = args.get(2).and_then(|p| p.parse().ok()).unwrap_or(0);
+    let end_port: usize = args
+        .get(3)
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(start_port);
 
-    // Parse arguments
-    for arg in args.iter().enumerate() {
-        match arg {
-            (i, val) if val == "-ip" => addr = args[i + 1].clone(),
-            (_i, val) if val == "-l" => addr = "127.0.0.1".to_string(),
-            (i, val) if val == "-p" => {
-                starting_port = args[i + 1].parse()?;
-                ending_port = args[i + 2].parse()?;
-            }
-            (i, val) if val == "-cidr" => cidr = Some(args[i + 1].clone()),
-            _ => {}
-        }
-    }
-
-    // Handle the case where both IP and CIDR are provided (conflict)
-    if let Some(_cidr) = cidr.clone() {
-        if !addr.is_empty() {
-            println!("Can't process when both IP and CIDR are given.");
-            return Ok(());
-        }
-    }
-
-    // Validate required arguments
-    if starting_port == 0 || ending_port == 0 {
-        println!("Missing required arguments.");
+    if start_port == 0 || (end_port != start_port && end_port < start_port) {
+        println!("Invalid or missing port range.");
         return Ok(());
     }
 
-    // If CIDR is provided, get all the IPs in that range and scan ports
-    if let Some(cidr_value) = cidr {
-        let addresses = get_ips(&cidr_value)?;
-        for addr in addresses.iter() {
-            for port in starting_port..=ending_port {
-                match try_listen(&addr.to_string(), port) {
-                    Ok(port) => println!("Port {} is available on {}", port, addr),
-                    Err(msg) => println!("Port {}: {}", port, msg),
+    match command {
+        "-p" => {
+            for port in start_port..=end_port {
+                match try_listen(port) {
+                    Ok(_) => println!("Port {} is available.", port),
+                    Err(msg) => println!("Port {} is not available: {}", port, msg),
                 }
             }
         }
-    }
-
-    // If CIDR is not provided, scan the given single IP address
-    for port in starting_port..=ending_port {
-        match try_listen(&addr, port) {
-            Ok(port) => println!("Port {} is available on {}", port, addr),
-            Err(msg) => println!("Port {}: {}", port, msg),
+        "-n" => {
+            for port in start_port..=end_port {
+                match try_listen(port) {
+                    Ok(_) => println!("Port {} is available.", port),
+                    Err(_) => {
+                        println!("Port {} is busy. Attempting to make it available...", port);
+                        match kill_process_on_port(port) {
+                            Ok(_) => println!("Successfully freed port {}.", port),
+                            Err(msg) => println!("Failed to free port {}: {}", port, msg),
+                        }
+                    }
+                }
+            }
         }
+        _ => println!("Invalid command. Use -p or -n."),
     }
 
     Ok(())
 }
 
-fn try_listen(address: &str, port: usize) -> Result<usize, String> {
-    let full_address = format!("{}:{}", address, port);
-    match TcpListener::bind(&full_address) {
-        Ok(_listener) => Ok(port),
-        Err(_) => Err("Port is busy".to_string()),
+fn try_listen(port: usize) -> Result<(), String> {
+    let check_command = format!("lsof -t -i:{}", port);
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(&check_command)
+        .output()
+        .map_err(|_| "Failed to execute lsof command".to_string())?;
+
+    if !output.stdout.is_empty() {
+        return Err(format!("Port {} is in use", port));
     }
+    Ok(())
 }
 
-fn get_ips(targets: &String) -> Result<Vec<String>, Box<dyn Error>> {
-    let mut ips = Vec::new();
+fn kill_process_on_port(port: usize) -> Result<(), String> {
+    let pid_command = format!("lsof -t -i:{}", port);
+    let pid_output = Command::new("sh")
+        .arg("-c")
+        .arg(&pid_command)
+        .output()
+        .map_err(|_| "Failed to execute PID command".to_string())?;
 
-    if let Ok(network) = IpNetwork::from_str(targets) {
-        for ip in network.iter() {
-            ips.push(ip.to_string());
-        }
-    } else {
-        return Err("Invalid IP address or CIDR format".into());
+    let pid = String::from_utf8(pid_output.stdout)
+        .map_err(|_| "Failed to parse PID output".to_string())?
+        .trim()
+        .to_string();
+
+    if pid.is_empty() {
+        return Err("No process found on the port".to_string());
     }
 
-    Ok(ips)
+    println!("Found process with PID: {} on port {}", pid, port);
+
+    let kill_command = format!("kill -9 {}", pid);
+    Command::new("sh")
+        .arg("-c")
+        .arg(&kill_command)
+        .output()
+        .map_err(|_| "Failed to execute kill command".to_string())?;
+
+    println!("Killed process with PID: {}", pid);
+    Ok(())
 }
