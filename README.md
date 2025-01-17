@@ -12,8 +12,22 @@ curl -fsSL https://raw.githubusercontent.com/rajiknows/portscanner/main/install.
 
 
 ## Usage
+
+to check availablity of single port
 ```bash
-sk -l -p 8000 8010
-sk -ip 192.168.1.1 -p 20 80
-sk -cidr 192.168.1.0/24 -p 80 100
+sk -p <port>
 ```
+to check availablity of range of ports 
+```bash
+sk -p <start> <end>
+```
+to free a port
+```bash 
+sk -n <port>
+```
+to free a range of ports
+```bash
+sk -n <start> <end>
+```
+
+
